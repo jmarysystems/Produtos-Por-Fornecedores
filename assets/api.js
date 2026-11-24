@@ -60,6 +60,12 @@ export async function sessao() {
 export async function listar(tabela, opcoes = {}) {
   let q = sb.from(tabela).select(opcoes.select || '*');
   for (const [campo, valor] of Object.entries(opcoes.eq || {})) q = q.eq(campo, valor);
+  if (opcoes.busca) {
+    const termo = String(opcoes.busca).replace(/[%,()]/g, ' ').trim();
+    if (termo) {
+      q = q.or(`sku.ilike.%${termo}%,ean.ilike.%${termo}%,descricao.ilike.%${termo}%`);
+    }
+  }
   if (opcoes.ordem) q = q.order(opcoes.ordem, { ascending: opcoes.asc !== false });
   if (opcoes.limite) q = q.limit(opcoes.limite);
   const { data, error } = await q;

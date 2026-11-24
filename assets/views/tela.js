@@ -92,33 +92,107 @@ export async function render(raiz, ctx) {
 
   raiz.querySelector('#adicionar')?.addEventListener('click', () => {
     const ligados = new Set((porFornecedor[atual.id] || []).map((v) => v.produto_id));
-    const disponiveis = produtos.filter((p) => !ligados.has(p.id));
+    let escolhido = null;
 
     const { fechar, corpo } = ui.modal({
       titulo: 'Adicionar produto',
-      largura: '620px',
+      largura: '680px',
       corpo: `
-        <label class="campo"><span>Produto</span>
-          <select name="produto_id">
-            ${disponiveis.map((p) => `<option value="${ui.esc(p.id)}">${
-              ui.esc(`${p.sku} — ${p.descricao}`)}</option>`).join('')}
-          </select></label>
-        <div class="linha-acoes">
-          <button type="button" class="botao-primario" id="ok">Adicionar</button>
+        <label class="campo"><span>Pesquisar produto (SKU, EAN ou descrição)</span>
+          <input type="search" id="busca" autofocus placeholder="digite para procurar"></label>
+        <div id="resultados" style="max-height:320px;overflow:auto;margin-top:8px"></div>
+        <div class="sub" id="selecionado" style="margin-top:8px"></div>
+        <div class="linha-acoes" style="margin-top:12px">
+          <button type="button" class="botao-primario" id="ok" disabled>Adicionar</button>
           <button type="button" id="cancelar">Cancelar</button>
-        </div>`,
+        </div>
+        <div class="sub" id="info" style="margin-top:8px"></div>`,
+    });
+
+    const busca = corpo.querySelector('#busca');
+    const resultados = corpo.querySelector('#resultados');
+    const selecionado = corpo.querySelector('#selecionado');
+    const info = corpo.querySelector('#info');
+    const botaoOk = corpo.querySelector('#ok');
+
+    let temporizador = null;
+
+    async function procurar(termo) {
+      const t = termo.trim();
+      if (t.length < 2) {
+        resultados.innerHTML = '<p class="sub">Digite ao menos 2 caracteres.</p>';
+        return;
+      }
+
+      resultados.innerHTML = '<p class="sub">Procurando…</p>';
+
+      try {
+        const achados = await listar('produtos', {
+          select: 'id, sku, ean, descricao, unidade',
+          busca: t,
+          ordem: 'sku',
+          limite: 25,
+        });
+
+        const livres = achados.filter((p) => !ligados.has(p.id));
+
+        if (!livres.length) {
+          resultados.innerHTML = '<p class="sub">Nenhum produto encontrado (ou já ligado a este fornecedor).</p>';
+          return;
+        }
+
+        resultados.innerHTML = `<div class="tabela-rolagem"><table>
+          <thead><tr><th>SKU</th><th>EAN</th><th>Descrição</th><th></th></tr></thead>
+          <tbody>
+            ${livres.map((p) => `<tr>
+              <td class="mono">${ui.esc(p.sku || '')}</td>
+              <td class="mono">${ui.esc(p.ean || '—')}</td>
+              <td>${ui.esc(p.descricao || '')}</td>
+              <td><button type="button" class="botao-pequeno"
+                    data-escolher="${ui.esc(p.id)}">Selecionar</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>`;
+
+        for (const b of resultados.querySelectorAll('[data-escolher]')) {
+          b.addEventListener('click', () => {
+            escolhido = livres.find((p) => p.id === b.dataset.escolher);
+            selecionado.innerHTML = escolhido
+              ? `<strong>Selecionado:</strong> ${ui.esc(escolhido.sku)} — ${ui.esc(escolhido.descricao)}`
+              : '';
+            botaoOk.disabled = !escolhido;
+          });
+        }
+      } catch (erro) {
+        resultados.innerHTML = `<p class="sub">${ui.esc(erro.message)}</p>`;
+      }
+    }
+
+    busca.addEventListener('input', () => {
+      botaoOk.disabled = true;
+      selecionado.innerHTML = '';
+      escolhido = null;
+      clearTimeout(temporizador);
+      temporizador = setTimeout(() => procurar(busca.value), 350);
     });
 
     corpo.querySelector('#cancelar').addEventListener('click', fechar);
-    corpo.querySelector('#ok').addEventListener('click', async () => {
-      const produtoId = corpo.querySelector('[name="produto_id"]').value;
-      if (!produtoId) return ui.toast('Escolha um produto.', 'erro');
+    botaoOk.addEventListener('click', async () => {
+      if (!escolhido) return ui.toast('Escolha um produto.', 'erro');
+      botaoOk.disabled = true;
       try {
-        await criar('produto_por_fornecedor', { fornecedor_id: atual.id, produto_id: produtoId });
+        await criar('produto_por_fornecedor', {
+          fornecedor_id: atual.id, produto_id: escolhido.id,
+        });
         fechar();
         ui.toast('Produto ligado ao fornecedor.');
         ctx.recarregar();
-      } catch (erro) { ui.toast(erro.message, 'erro'); }
+      } catch (erro) {
+        ui.toast(erro.message, 'erro');
+        botaoOk.disabled = false;
+      }
     });
+
+    if (info) info.textContent = '';
   });
 }
