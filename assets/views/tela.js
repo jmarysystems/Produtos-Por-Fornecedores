@@ -1,6 +1,6 @@
 // Produtos por fornecedor: escolhe o fornecedor e mantém os produtos ligados a ele.
-import { listar, criar, excluir } from '../api.js';
-import * as ui from '../ui.js';
+import { listar, criar, excluir } from '../api.js?v=20261124a';
+import * as ui from '../ui.js?v=20261124a';
 
 export async function render(raiz, ctx) {
   ctx.setTitulo('Produtos por Fornecedor');
